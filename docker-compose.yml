@@ -1,26 +1,8 @@
 # ============================================================
-# docker-compose.yml — IDE-MDD (producción)
+# docker-compose.yml — Stack de producción (gestionado por Portainer)
 #
-# Reemplaza el stack "cur-goremad" en los mismos subdominios:
-#   - API:      https://api.cur.regionmadrededios.gob.pe
-#   - Frontend: https://cur.regionmadrededios.gob.pe
-#   - BD remota:  <host>:9006 (pgAdmin / clientes externos)
-#
-# Lo consume Portainer (stack desde git). NO se corre en local:
-# usa imágenes pre-construidas del registry (GHCR por defecto).
-# El SSL/TLS lo maneja el MISMO Traefik que hoy sirve al stack
-# anterior (certresolver "ssl"). Migración: detener el stack viejo
-# ANTES de levantar este para que no haya dos routers con la misma
-# regla Host(...).
-#
-# IMPORTANTE: los tres servicios van SOLO en la red externa "traefik"
-# (igual que el stack anterior). No usar redes internas separadas:
-# con varias redes Traefik v2 puede resolver la IP de la red interna
-# y el tráfico da timeout (504).
-#
-# Deploy automático:
-#   1. CI construye y sube ghcr.io/sgat-goremad/idemdd-backend:sha...
-#   2. CI hace curl al webhook del stack → Portainer pull + redeploy
+# No se ejecuta en local: usa imágenes pre-construidas del registry.
+# Referencia de variables: .env.example
 # ============================================================
 
 name: idemdd
