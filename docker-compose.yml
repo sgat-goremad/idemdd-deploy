@@ -1,0 +1,142 @@
+# ============================================================
+# docker-compose.yml — IDE-MDD (producción)
+#
+# Reemplaza el stack "cur-goremad" en los mismos subdominios:
+#   - API:      https://api.cur.regionmadrededios.gob.pe
+#   - Frontend: https://cur.regionmadrededios.gob.pe
+#   - BD remota:  <host>:9006 (pgAdmin / clientes externos)
+#
+# Lo consume Portainer (stack desde git). NO se corre en local:
+# usa imágenes pre-construidas del registry (GHCR por defecto).
+# El SSL/TLS lo maneja el MISMO Traefik que hoy sirve al stack
+# anterior (certresolver "letsencrypt"). Migración: detener el
+# stack viejo ANTES de levantar este para que no haya dos routers
+# con la misma regla Host(...).
+#
+# Deploy automático:
+#   1. CI construye y sube ghcr.io/sgat-goremad/idemdd-api:sha...
+#   2. CI hace curl al webhook del stack → Portainer pull + redeploy
+# ============================================================
+
+name: idemdd
+
+networks:
+  # Red interna del stack (db, api, frontend)
+  internal:
+    driver: bridge
+
+  # Red compartida donde corre Traefik (debe existir antes)
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-traefik}
+
+services:
+  # ============================================================
+  # db — PostgreSQL 16 + PostGIS (acceso remoto en puerto 9006)
+  # ============================================================
+  db:
+    image: postgis/postgis:16-3.4-alpine
+    container_name: idemdd-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-idemdd}
+    command: postgres -c listen_addresses='*'
+    ports:
+      - "9006:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init/01-extensions.sql:/docker-entrypoint-initdb.d/01-extensions.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-idemdd}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - internal
+
+  # ============================================================
+  # api — WebApi .NET + Tesseract
+  # ============================================================
+  api:
+    image: ${REGISTRY:-ghcr.io/sgat-goremad}/idemdd-api:${API_TAG:-latest}
+    container_name: idemdd-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:5000
+
+      # BD
+      ConnectionStrings__PostgreSQLConnection: >-
+        Host=db;
+        Port=5432;
+        Database=${POSTGRES_DB:-idemdd};
+        Username=${POSTGRES_USER};
+        Password=${POSTGRES_PASSWORD}
+
+      # JWT
+      Jwt__Key: ${JWT_KEY}
+      Jwt__Issuer: ${JWT_ISSUER}
+      Jwt__Audience: ${JWT_AUDIENCE}
+
+      # OCR
+      Ocr__Enabled: ${OCR_ENABLED:-true}
+      Ocr__TesseractDataPath: /usr/share/tesseract-ocr/4.00/tessdata/
+      Ocr__MaxPagesPerDocument: ${OCR_MAX_PAGES:-10}
+      Ocr__MaxCharsPerDocument: ${OCR_MAX_CHARS:-50000}
+      Ocr__PerDocumentTimeout: ${OCR_TIMEOUT:-00:02:00}
+
+      # Storage (archivos digitalizados)
+      Storage__RootPath: /app/Storage
+    volumes:
+      - storage_data:/app/Storage
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.idemdd-api.loadbalancer.server.port=5000"
+      - "traefik.http.routers.idemdd-api.rule=Host(`api.cur.regionmadrededios.gob.pe`)"
+      - "traefik.http.routers.idemdd-api.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
+      - "traefik.http.routers.idemdd-api.tls=true"
+      - "traefik.http.routers.idemdd-api.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - internal
+      - traefik
+
+  # ============================================================
+  # frontend — React + Vite (nginx)
+  # ============================================================
+  frontend:
+    image: ${REGISTRY:-ghcr.io/sgat-goremad}/idemdd-admin-frontend:${FRONTEND_TAG:-latest}
+    container_name: idemdd-frontend
+    restart: unless-stopped
+    depends_on:
+      - api
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.idemdd-web.loadbalancer.server.port=80"
+      - "traefik.http.routers.idemdd-web.rule=Host(`cur.regionmadrededios.gob.pe`)"
+      - "traefik.http.routers.idemdd-web.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
+      - "traefik.http.routers.idemdd-web.tls=true"
+      - "traefik.http.routers.idemdd-web.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+    networks:
+      - internal
+      - traefik
+
+# ============================================================
+# Volúmenes
+# ============================================================
+volumes:
+  postgres_data:
+    driver: local
+  storage_data:
+    driver: local
