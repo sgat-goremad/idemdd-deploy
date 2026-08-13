@@ -9,9 +9,14 @@
 # Lo consume Portainer (stack desde git). NO se corre en local:
 # usa imágenes pre-construidas del registry (GHCR por defecto).
 # El SSL/TLS lo maneja el MISMO Traefik que hoy sirve al stack
-# anterior (certresolver "letsencrypt"). Migración: detener el
-# stack viejo ANTES de levantar este para que no haya dos routers
-# con la misma regla Host(...).
+# anterior (certresolver "ssl"). Migración: detener el stack viejo
+# ANTES de levantar este para que no haya dos routers con la misma
+# regla Host(...).
+#
+# IMPORTANTE: los tres servicios van SOLO en la red externa "traefik"
+# (igual que el stack anterior). No usar redes internas separadas:
+# con varias redes Traefik v2 puede resolver la IP de la red interna
+# y el tráfico da timeout (504).
 #
 # Deploy automático:
 #   1. CI construye y sube ghcr.io/sgat-goremad/idemdd-backend:sha...
@@ -21,10 +26,6 @@
 name: idemdd
 
 networks:
-  # Red interna del stack (db, api, frontend)
-  internal:
-    driver: bridge
-
   # Red compartida donde corre Traefik (debe existir antes)
   traefik:
     external: true
@@ -55,7 +56,7 @@ services:
       retries: 12
       start_period: 30s
     networks:
-      - internal
+      - traefik
 
   # ============================================================
   # api — WebApi .NET + Tesseract
@@ -109,7 +110,6 @@ services:
       retries: 3
       start_period: 60s
     networks:
-      - internal
       - traefik
 
   # ============================================================
@@ -129,7 +129,6 @@ services:
       - "traefik.http.routers.idemdd-web.tls=true"
       - "traefik.http.routers.idemdd-web.tls.certresolver=${TRAEFIK_CERTRESOLVER:-ssl}"
     networks:
-      - internal
       - traefik
 
 # ============================================================
