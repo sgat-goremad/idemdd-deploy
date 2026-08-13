@@ -14,7 +14,7 @@
 # con la misma regla Host(...).
 #
 # Deploy automático:
-#   1. CI construye y sube ghcr.io/sgat-goremad/idemdd-api:sha...
+#   1. CI construye y sube ghcr.io/sgat-goremad/idemdd-backend:sha...
 #   2. CI hace curl al webhook del stack → Portainer pull + redeploy
 # ============================================================
 
@@ -61,7 +61,7 @@ services:
   # api — WebApi .NET + Tesseract
   # ============================================================
   api:
-    image: ${REGISTRY:-ghcr.io/sgat-goremad}/idemdd-api:${API_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/sgat-goremad}/idemdd-backend:${API_TAG:-latest}
     container_name: idemdd-api
     restart: unless-stopped
     depends_on:
