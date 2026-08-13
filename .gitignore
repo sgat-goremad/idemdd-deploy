@@ -1,6 +1,7 @@
 # Secretos y config local nunca se versionan
 .env
 .env.*
+!.env.example
 *.local
 
 # Logs
