@@ -101,7 +101,7 @@ services:
       - "traefik.http.routers.idemdd-api.rule=Host(`api.cur.regionmadrededios.gob.pe`)"
       - "traefik.http.routers.idemdd-api.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
       - "traefik.http.routers.idemdd-api.tls=true"
-      - "traefik.http.routers.idemdd-api.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+      - "traefik.http.routers.idemdd-api.tls.certresolver=${TRAEFIK_CERTRESOLVER:-ssl}"
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://localhost:5000/health"]
       interval: 30s
@@ -127,7 +127,7 @@ services:
       - "traefik.http.routers.idemdd-web.rule=Host(`cur.regionmadrededios.gob.pe`)"
       - "traefik.http.routers.idemdd-web.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
       - "traefik.http.routers.idemdd-web.tls=true"
-      - "traefik.http.routers.idemdd-web.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+      - "traefik.http.routers.idemdd-web.tls.certresolver=${TRAEFIK_CERTRESOLVER:-ssl}"
     networks:
       - internal
       - traefik
