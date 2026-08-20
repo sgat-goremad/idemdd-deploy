@@ -74,6 +74,17 @@ services:
       Ocr__MaxCharsPerDocument: ${OCR_MAX_CHARS:-50000}
       Ocr__PerDocumentTimeout: ${OCR_TIMEOUT:-00:02:00}
 
+      # GeoServer (publicación WMS/WFS de vistas SQL).
+      GeoServer__Enabled: ${GEOSERVER_ENABLED:-true}
+      GeoServer__BaseUrl: ${GEOSERVER_BASE_URL:-}
+      GeoServer__Username: ${GEOSERVER_USERNAME:-}
+      GeoServer__Password: ${GEOSERVER_PASSWORD:-}
+      GeoServer__WorkspacePrefix: ${GEOSERVER_WORKSPACE_PREFIX:-idemdd}
+      GeoServer__NamespaceUriTemplate: ${GEOSERVER_NAMESPACE_URI_TEMPLATE:-https://ide.regionmadrededios.gob.pe/idemdd/{0}_{1}/geo}
+      GeoServer__DatastoreName: ${GEOSERVER_DATASTORE_NAME:-idemdd_postgis_{0}}
+      GeoServer__PostgresConnectionString: ${GEOSERVER_POSTGRES_CONNECTION_STRING:-}
+      GeoServer__RequestTimeoutSeconds: ${GEOSERVER_REQUEST_TIMEOUT_SECONDS:-30}
+
       # Storage (archivos digitalizados)
       Storage__RootPath: /app/Storage
     volumes:
