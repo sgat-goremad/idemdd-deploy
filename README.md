@@ -1,113 +1,67 @@
-# idemdd-deploy — Stack de producción (Portainer)
+# idemdd-deploy
 
-Stack de producción del proyecto **IDE-MDD** (GORE Madre de Dios), gestionado
-por Portainer con auto-pull desde `ghcr.io/sgat-goremad/idemdd-backend` y
-`idemdd-admin-frontend`.
+Stack de producción del proyecto **IDE-MDD** (GORE Madre de Dios),
+gestionado por Portainer con auto-pull desde
+`ghcr.io/sgat-goremad/idemdd-backend` y `idemdd-admin-frontend`.
 
-## Arquitectura
+## Componentes
 
-```
-                ┌────────────────────────────────────────────────────────┐
-                │  Traefik (red `traefik`, externo)                     │
-                │  - tls via Let's Encrypt (certresolver `ssl`)         │
-                └───────┬─────────────────────────────┬──────────────────┘
-                        │ HTTPS                       │ HTTPS
-                        ▼                             ▼
-        ┌───────────────────────────┐   ┌───────────────────────────────┐
-        │  idemdd-frontend (nginx)  │   │  idemdd-api (.NET 10 + Tesseract)│
-        │  React + Vite             │   │  ASP.NET Core 5000            │
-        └───────────────────────────┘   └──────┬────────────────────────┘
-                                              │ conexión interna
-                                              ▼
-                              ┌────────────────────────────┐
-                              │  idemdd-postgres            │
-                              │  postgis/postgis:16-3.4     │
-                              │  puerto host 9006 → 5432    │
-                              └────────────────────────────┘
-                                              ▲
-                                              │ HTTP (dentro de red)
-                                              │
-                              ┌────────────────────────────┐
-                              │  GeoServer (externo)        │
-                              │  https://ide.regionmadrededios.gob.pe/geoserver
-                              └────────────────────────────┘
-```
+| Servicio  | Imagen                                          | Descripción                              |
+|-----------|-------------------------------------------------|------------------------------------------|
+| `db`      | `postgis/postgis:16-3.4-alpine`                 | PostgreSQL 16 + PostGIS                  |
+| `api`     | `ghcr.io/sgat-goremad/idemdd-backend`           | WebApi .NET 10 + Tesseract               |
+| `frontend`| `ghcr.io/sgat-goremad/idemdd-admin-frontend`    | React + Vite (nginx)                     |
 
-**Volúmenes nombrados:**
-- `postgres_data` — `/var/lib/postgresql/data` (Postgres)
-- `storage_data` — `/app/Storage` (archivos digitalizados)
+Todos los servicios están en la red externa `traefik` (la misma donde corre
+Traefik con Let's Encrypt). El routing público a `api` y `frontend` lo hace
+Traefik vía `Host(...)` rules; la BD no se expone públicamente.
 
-## Configuración inicial
+> **Storage / MinIO**: el servicio de object storage corre en un stack
+> aparte (`idemdd-minio-prod`) y se consume desde el `api` por DNS a través
+> de la red `traefik` compartida. No está definido en este compose.
 
-### 1. Crear la red de Traefik (si no existe)
+> **Documentación operativa detallada**: variables de entorno, troubleshooting
+> paso a paso, credenciales, URLs internas y procedimientos de despliegue
+> viven en `DESPLIEGUE_PRODUCCION.md` (doc interno, no versionado en este
+> repo). Este `README.md` es la referencia pública mínima.
 
-```bash
-docker network create traefik
-```
+## Configuración
 
-### 2. Copiar `.env.example` y completar valores sensibles
+Las variables de entorno se definen en la UI del stack en Portainer
+(cifradas en su store). El compose usa defaults seguros con
+`${VAR:-default}` para todas las no sensibles.
 
-```bash
-cp .env.example .env
-# Editar .env y completar: POSTGRES_PASSWORD, JWT_KEY, GEOSERVER_PASSWORD, etc.
-```
+**Referencia completa de variables**: ver [`.env.example`](.env.example).
 
-**Importante:** el `.env` está en `.gitignore`, nunca se commitea.
+**Set mínimo requerido para arrancar el stack:**
 
-### 3. Validar la config antes de desplegar
+| Variable | Notas |
+|---|---|
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | BD (SECRETS) |
+| `JWT_KEY` (≥32 bytes), `JWT_ISSUER`, `JWT_AUDIENCE` | Auth (SECRETS) |
+| `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` | Deben coincidir con el stack `idemdd-minio-prod` (SECRETS) |
 
-```bash
-pwsh ./validate-yaml.ps1
-```
+## Despliegue
 
-(o `pwsh validate-yaml.ps1` desde la carpeta). El script valida sintaxis YAML
-y que las env vars requeridas estén definidas.
+### Automático (recomendado)
 
-### 4. Desplegar el stack en Portainer
+1. Push a `main` del repo `sgat-goremad/idemdd-backend` (o
+   `idemdd-admin-frontend`).
+2. GitHub Actions construye la imagen, la sube a GHCR y llama a la
+   API de Portainer para hacer redeploy con `pullImage: true`.
+3. Verificar en la pestaña **Actions** del repo que el step
+   *Trigger Portainer redeploy* termine en verde.
 
-- Stacks → Add stack → Repository
-  - Repository URL: `https://github.com/sgat-goremad/idemdd-deploy`
-  - Compose path: `docker-compose.yml`
-  - Enable **"Automatic updates"** si querés que Portainer haga pull + redeploy
-    cuando se actualice el repo
-- Variables de entorno: pegar las del `.env` (Portainer las cifra en su store)
+### Manual (Portainer)
 
-## Variables de entorno
-
-| Variable | Default | Requerida | Notas |
-|---|---|---|---|
-| `POSTGRES_USER` | — | ✅ | Usuario Postgres |
-| `POSTGRES_PASSWORD` | — | ✅ | Password Postgres (SECRET) |
-| `POSTGRES_DB` | `idemdd` | ❌ | |
-| `POSTGRES_HOST_PORT` | `9006` | ❌ | Puerto en el host para Postgres |
-| `JWT_KEY` | — | ✅ | Clave de firma JWT (≥32 bytes) (SECRET) |
-| `JWT_ISSUER` | — | ✅ | Issuer del JWT |
-| `JWT_AUDIENCE` | — | ✅ | Audience del JWT |
-| `OCR_ENABLED` | `true` | ❌ | Habilita OCR con Tesseract |
-| `OCR_MAX_PAGES` | `10` | ❌ | |
-| `OCR_MAX_CHARS` | `50000` | ❌ | |
-| `OCR_TIMEOUT` | `00:02:00` | ❌ | Timeout por documento |
-| `GEOSERVER_ENABLED` | `true` | ❌ | Master switch del módulo WFS |
-| `GEOSERVER_BASE_URL` | — | ✅ | URL del GeoServer externo (sin trailing slash) |
-| `GEOSERVER_USERNAME` | — | ✅ | Usuario admin de GeoServer |
-| `GEOSERVER_PASSWORD` | — | ✅ | Password admin (SECRET) |
-| `GEOSERVER_WORKSPACE_PREFIX` | `idemdd` | ❌ | Prefijo del nombre del workspace |
-| `GEOSERVER_NAMESPACE_URI_TEMPLATE` | (default del código) | ❌ | Ver ⚠️ abajo |
-| `GEOSERVER_DATASTORE_NAME` | (default del código) | ❌ | Ver ⚠️ abajo |
-| `GEOSERVER_POSTGRES_CONNECTION_STRING` | (fallback a la del backend) | ❌ | Connection string dedicada para GeoServer |
-| `GEOSERVER_REQUEST_TIMEOUT_SECONDS` | `30` | ❌ | |
-| `TRAEFIK_NETWORK` | `traefik` | ❌ | Red de Traefik |
-| `TRAEFIK_ENTRYPOINT` | `websecure` | ❌ | |
-| `TRAEFIK_CERTRESOLVER` | `ssl` | ❌ | Resolver de Let's Encrypt |
-| `REGISTRY` | `ghcr.io/sgat-goremad` | ❌ | |
-| `API_TAG` | `latest` | ❌ | Tag de la imagen del backend |
-| `FRONTEND_TAG` | `latest` | ❌ | Tag de la imagen del frontend |
+`Stacks → idemdd → Update → Pull and redeploy`. Útil cuando se cambian
+variables de entorno del stack o el compose en este repo.
 
 ## ⚠️ Bug conocido: `${VAR:-default}` con `{0}` y `{1}` en Portainer
 
-**Síntoma:** en producción, `docker exec idemdd-api printenv | grep NamespaceUriTemplate`
-muestra un valor **malformado**, aunque la UI de Portainer muestre el valor
-correcto. Por ejemplo:
+**Síntoma:** en producción, `docker exec idemdd-api printenv | grep
+NamespaceUriTemplate` muestra un valor **malformado**, aunque la UI de
+Portainer muestre el valor correcto. Por ejemplo:
 
 | UI de Portainer (correcto) | `printenv` en el contenedor (malformado) |
 |---|---|
@@ -115,95 +69,33 @@ correcto. Por ejemplo:
 | `idemdd_postgis_{0}` (18 chars) | `idemdd_postgis_{0}}` (19 chars) |
 
 **Causa:** Portainer (y Docker Compose v1 / v2 temprano) interpreta mal las
-llaves `{` y `}` literales dentro del **default** de `${VAR:-default}`. El
-parser de compose cuenta llaves de manera incorrecta y concatena fragmentos
-del propio string al final, produciendo un template que `string.Format` no
-puede parsear. El resultado: el handler del publish tira un `FormatException`
-con `500 Internal Server Error` y stack trace críptico (`offset 64, Format
-item ends prematurely`).
+llaves `{` y `}` literales dentro del **default** de `${VAR:-default}`.
+El parser concatena fragmentos del propio string al final, produciendo
+un template que `string.Format` no puede parsear. El handler de publish
+tira un `FormatException` con 500 y stack trace críptico
+(`offset 64, Format item ends prematurely`).
 
-**Fix aplicado (jun-2026):** se quitaron los defaults inline en
-`docker-compose.yml` para `GeoServer__NamespaceUriTemplate` y
-`GeoServer__DatastoreName`. Ahora si la env var no está seteada, el
-contenedor recibe `""` y el código C# usa el default propio:
+**Mitigación:** no usar `{0}` / `{1}` en defaults inline de env vars del
+compose. Si el operador no setea la variable, el contenedor recibe `""`
+y el código C# usa su default propio. Este compose ya evita ese patrón
+para las env vars afectadas.
 
-| Env var | Default del código (GeoServerSettings) |
-|---|---|
-| `GeoServer__NamespaceUriTemplate` | `http://localhost/idemdd/{0}_{1}/geo` |
-| `GeoServer__DatastoreName` | `idemdd_postgis_{0}` |
+## Solución de problemas
 
-**Cómo verificar el fix después de un redeploy:**
+Para troubleshooting detallado (conexiones al server, comandos de
+diagnóstico, credenciales, networking entre stacks, manejo de MinIO y
+backups, etc.) ver `DESPLIEGUE_PRODUCCION.md` (doc interno).
 
-```bash
-docker exec idemdd-api printenv | grep -iE 'NamespaceUriTemplate|DatastoreName'
-```
-
-Debería mostrar:
-```
-GeoServer__NamespaceUriTemplate=
-GeoServer__DatastoreName=
-```
-(vacías — el código usará sus defaults propios). Si ves basura, significa que
-Portainer todavía tiene un valor viejo cacheado y hay que **eliminar y recrear
-el contenedor**, no solo restart.
-
-**Fix complementario (código):** los handlers de publish/unpublish ahora
-validan el template con `GeoServerSettings.SafeFormat`, que traduce un
-template malformado en un `ArgumentException` con el valor exacto y el
-detalle del error, elevado a `BusinessRuleException` (HTTP 400) con un
-mensaje claro para el operador. Nunca más un 500 críptico por typo en
-env vars.
-
-## Troubleshooting
-
-### El publish en GeoServer devuelve 500 con "Format item ends prematurely"
-
-1. Verificar el template activo en el contenedor:
-   ```bash
-   docker exec idemdd-api printenv | grep -iE 'NamespaceUriTemplate|DatastoreName'
-   ```
-2. Si muestra basura (caracteres extra concatenados), ver la sección de
-   bug conocido arriba. Hay que **recrear** el contenedor en Portainer
-   (NO solo restart).
-3. Si muestra el valor correcto, el problema es de otro tipo. Ver logs:
-   ```bash
-   docker logs --tail 200 idemdd-api | grep -A 30 'publish'
-   ```
-
-### El healthcheck del contenedor api falla
-
-```bash
-docker inspect idemdd-api --format '{{.State.Health.Status}}'
-docker inspect idemdd-api --format '{{range .State.Health.Log}}{{println .Output}}{{end}}' | tail -20
-```
-
-Si el `start-period=60s` no es suficiente (BD tarda más en arrancar en
-composición nueva), el healthcheck queda en `starting` hasta que `db`
-termine. Esperá o reiniciá el contenedor `api` después de que `db` esté
-`healthy`.
-
-### Postgres no arranca después de un restore
-
-Si el directorio `postgres_data` tiene un PG_VERSION distinto al de la
-imagen actual, Postgres se niega a arrancar. Solución: backup + recreate
-del volumen `postgres_data` (⚠️ borra todos los datos).
-
-### GeoServer devuelve 401 al intentar crear el datastore
-
-`GeoServer__Password` está vacío. Verificar con `printenv` y completar
-en Portainer.
-
-## Archivos del directorio
+## Archivos
 
 ```
 idemdd-deploy/
-├── docker-compose.yml       # Stack principal (api, db, frontend)
+├── docker-compose.yml       # Stack principal (db, api, frontend)
 ├── .env.example             # Template de variables de entorno
 ├── .env                     # (gitignored) Config real
 ├── .gitignore               # .env, *.local, *.log
-├── README.md                # Este archivo
-├── validate-yaml.ps1        # Helper de validación local
+├── README.md                # Este archivo (público)
 └── postgres/
     └── init/
-        └── 01-extensions.sql # Extensiones Postgres (postgis, etc.)
+        └── 01-extensions.sql # Extensiones Postgres (postgis, ltree)
 ```
