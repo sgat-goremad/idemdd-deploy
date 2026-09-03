@@ -77,6 +77,7 @@ services:
       # GeoServer (publicación WMS/WFS de vistas SQL).     
       GeoServer__Enabled: ${GEOSERVER_ENABLED:-true}
       GeoServer__BaseUrl: ${GEOSERVER_BASE_URL:-}
+      GeoServer__PublicBaseUrl: ${GEOSERVER_PUBLIC_BASE_URL:-}
       GeoServer__Username: ${GEOSERVER_USERNAME:-}
       GeoServer__Password: ${GEOSERVER_PASSWORD:-}
       GeoServer__WorkspacePrefix: ${GEOSERVER_WORKSPACE_PREFIX:-}
